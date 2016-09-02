@@ -1,0 +1,142 @@
+---
+# tasks file for php-fpm
+- name: "Install package to compile"
+  package: name={{ item }} state=present
+  with_items:
+    - build-essential
+    - gcc
+    - google-perftools 
+    - libatomic-ops-dev
+    - libbz2-dev
+    - libc-client2007e
+    - libc-client2007e-dev
+    - libc6
+    - libcurl4-openssl-dev
+    - libfcgi-dev
+    - libfcgi0ldbl
+    - libfreetype6-dev
+    - libgd2-xpm-dev 
+    - libgeoip-dev 
+    - libgeoip1 
+    - libgoogle-perftools-dev 
+    - libjpeg-dev
+    - libjpeg-turbo8-dev
+    - libkrb5-dev 
+    - libltdl-dev
+    - libmcrypt-dev
+    - libpcre3
+    - libpcre3-dev
+    - libpcrecpp0v5
+    - libperl-dev
+    - libpng12-dev
+    - libpq-dev 
+    - libssl-dev 
+    - libssl1.0.0
+    - libxml2-dev 
+    - libxslt1-dev 
+    - lsb-base
+    - openssl
+    - python-dev
+    - zlib1g
+    - zlib1g-dev
+- name: "Check - PHP Source Dir"
+  stat: "path=/usr/local/src/php-{{ php_major_version }}.{{ php_minor_version }}-build/"
+  register: php_source_dir
+- name: "Check - PHP Install Dir"
+  stat: "path=/opt/php-{{ php_major_version }}/"
+  register: php_install_dir
+- name: "Create PHP source directory"
+  file: 
+    path: "/usr/local/src/php-{{ php_major_version }}.{{ php_minor_version }}-build/"
+    state: "directory"
+  when: not php_source_dir.stat.exists
+- name: "Check - PHP Source file"
+  stat: "path=/usr/local/src/php-{{ php_major_version }}.{{ php_minor_version }}-build/php-{{ php_major_version }}.{{ php_minor_version }}.tar.bz2"
+  register: php_source_file
+- name: "Check - PHP Compile file"
+  stat: "path=/usr/local/src/php-{{ php_major_version }}.{{ php_minor_version }}/Makefile"
+  register: php_compile_file
+- name: "Check - PHP Bin file"
+  stat: "path=/opt/php-{{ php_major_version }}/bin/php"
+  register: php_binary_file
+- name: "Check - PHP Extract Directory"
+  stat: "path=/usr/local/src/php-{{ php_major_version }}.{{ php_minor_version }}/"
+  register: php_extract_tar_file
+- name: "Check - PHP Service file"
+  stat: "path=/etc/init.d/php-{{ php_major_version }}-fpm"
+  register: php_service_file
+- name: "Check if PHP is running"
+  command: service php-7-fpm status
+  ignore_errors: yes
+  changed_when: false
+  register: service_php_status
+- name: "Download PHP"
+  get_url: 
+    url: "{{ php_url }}"
+    dest: "/usr/local/src/php-{{ php_major_version }}.{{ php_minor_version }}-build/php-{{ php_major_version }}.{{ php_minor_version }}.tar.bz2"
+  become: "yes"
+  when: not php_source_file.stat.exists
+- name: "Create PHP install directory"
+  file: 
+    path: "/opt/php-{{ php_major_version }}/"
+    state: "directory"
+    mode: "0755"
+    owner: "root"
+    group: "root"
+  when: not php_install_dir.stat.exists
+- name: "Extract PHP"
+  unarchive: 
+    src: "/usr/local/src/php-{{ php_major_version }}.{{ php_minor_version }}-build/php-{{ php_major_version }}.{{ php_minor_version }}.tar.bz2"
+    dest: "/usr/local/src"
+    copy: "no"
+    mode: "0755"
+    owner: "root"
+    group: "root"
+  when: not php_extract_tar_file.stat.exists
+- name: "Compile PHP"
+  command: "./configure --prefix=/opt/php-{{ php_major_version }} --with-pdo-pgsql --with-zlib-dir --with-freetype-dir --enable-mbstring --with-libxml-dir=/usr --enable-soap --enable-calendar --with-curl --with-mcrypt --with-zlib --with-gd --with-pgsql --disable-rpath --enable-inline-optimization --with-bz2 --with-zlib --enable-sockets --enable-sysvsem --enable-sysvshm --enable-pcntl --enable-mbregex --enable-exif --enable-bcmath --with-mhash --enable-zip --with-pcre-regex --with-pdo-mysql --with-mysqli --with-mysql-sock=/var/run/mysqld/mysqld.sock --with-jpeg-dir=/usr --with-png-dir=/usr --enable-gd-native-ttf --with-openssl --with-fpm-user=www-data --with-fpm-group=www-data --with-libdir=/lib/x86_64-linux-gnu --enable-ftp --with-kerberos --with-gettext --with-xmlrpc --with-xsl --enable-opcache --enable-fpm --with-pear chdir=/usr/local/src/php-{{ php_major_version }}.{{ php_minor_version }}/"
+  when: not php_compile_file.stat.exists
+- name: "Make install PHP"
+  command: "make install chdir=/usr/local/src/php-{{ php_major_version }}.{{ php_minor_version }}/"
+  become: "yes"
+  when: not php_binary_file.stat.exists
+- name: "PHP{{ php_major_version }} create service file"
+  template: 
+    src: "templates/php.j2"
+    dest: "/etc/init.d/php-{{ php_major_version }}-fpm"
+    owner: "root"
+    group: "root"
+    force: "yes"
+    mode: "0755"
+  become: "yes"
+- name: "PHP{{ php_major_version }} www file"
+  template: 
+    src: "templates/www.conf.j2"
+    dest: "/opt/php-{{ php_major_version }}/etc/php-fpm.d/www.conf"
+    owner: "root"
+    group: "root"
+    force: "yes"
+    mode: "0755"
+  become: "yes"
+  notify: PHP FPM service restart
+- name: "PHP{{ php_major_version }} FPM conf file"
+  template: 
+    src: "templates/php-fpm.conf.j2"
+    dest: "/opt/php-{{ php_major_version }}/etc/php-fpm.conf"
+    owner: "root"
+    group: "root"
+    force: "yes"
+    mode: "0755"
+  become: "yes"
+  notify: PHP FPM service restart
+- name: "Create php{{ php_major_version }} create service"
+  command:
+    update-rc.d php-{{ php_major_version }}-fpm defaults
+  when: ansible_os_family == 'Debian' and not php_service_file.stat.exists
+  become: "yes"
+  notify: PHP FPM service restart
+- name: "PHP{{ php_major_version }} service start"
+  service: 
+    name: "php-{{ php_major_version }}-fpm"
+    enabled: "yes"
+  when: not php_service_file.stat.exists
